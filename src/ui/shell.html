@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Altersvorsorge-Planer v7.1.1</title>
+<!-- Kein CDN, keine Webfonts, keine externen Requests (ADR-0008).
+     Chart.js ist gevendort (src/vendor, MIT — siehe chart.js-LICENSE.md). -->
+<style>
+  :root { --bg:#faf9f5; --card:#fff; --text:#1a1a17; --mut:#6e6d66; --line:#e5e4dd;
+          --ok:#1d7a5f; --warn:#b3552d; --acc:#2f6fb0; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14.5px/1.5 system-ui, sans-serif; background:var(--bg); color:var(--text); }
+  main { max-width:1180px; margin:0 auto; padding:24px 18px 60px; }
+  h1 { font-size:21px; margin:0 0 2px; }
+  .sub { color:var(--mut); font-size:12.5px; margin-bottom:16px; }
+  .sub a { color:var(--acc); }
+  .cols { display:grid; grid-template-columns:340px 1fr; gap:16px; align-items:start; }
+  @media (max-width:900px){ .cols { grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin:0 0 14px; }
+  .card h2 { font-size:14px; margin:0 0 10px; }
+  fieldset { border:0; padding:0; margin:0 0 12px; }
+  legend { font-size:12px; font-weight:600; color:var(--mut); text-transform:uppercase; letter-spacing:.04em; padding:0; margin:0 0 6px; }
+  label { display:flex; justify-content:space-between; align-items:center; gap:8px; margin:5px 0; font-size:13.5px; }
+  input[type=number], input[type=date], select { width:130px; padding:4px 6px; border:1px solid var(--line); border-radius:6px; font:inherit; background:#fff; }
+  input[type=checkbox]{ width:auto; }
+  button { font:inherit; font-size:13px; padding:7px 12px; border:1px solid var(--acc); color:var(--acc); background:#fff; border-radius:8px; cursor:pointer; margin:2px 4px 2px 0; }
+  button:hover { background:var(--acc); color:#fff; }
+  button.sec { border-color:var(--line); color:var(--mut); }
+  .hint { font-size:11.5px; color:var(--mut); margin:2px 0 8px; }
+  .msg { font-size:12.5px; margin:8px 0 0; }
+  .msg.ok { color:var(--ok); } .msg.warn { color:var(--warn); }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:10px; }
+  .tile { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
+  .tile .v { font-size:16.5px; font-weight:600; }
+  .tile .l { font-size:11.5px; color:var(--mut); }
+  canvas { max-height:260px; }
+  table { border-collapse:collapse; width:100%; font-size:12.5px; }
+  th, td { text-align:right; padding:4px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th:first-child, td:first-child { text-align:left; }
+  #fehler { display:none; background:#fdf0ea; border:1px solid var(--warn); color:var(--warn); border-radius:8px; padding:8px 12px; margin-bottom:12px; font-size:13px; }
+  #st-out { font:12px/1.5 ui-monospace, monospace; white-space:pre-wrap; margin-top:10px; max-height:300px; overflow:auto; background:var(--bg); border-radius:8px; padding:10px 12px; display:none; }
+  .okc { color:var(--ok); } .failc { color:var(--warn); }
+  #info { display:none; }
+  footer { margin-top:22px; padding-top:12px; border-top:1px solid var(--line); font-size:12px; color:var(--mut); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Altersvorsorge-Planer <span style="font-weight:400">v7.1.1</span></h1>
+  <div class="sub">Modellrechnung — keine Anlage-, Steuer- oder Rechtsberatung.
+    <a href="#info" onclick="document.getElementById('info').style.display='block';return false;">Details</a>
+    &nbsp;·&nbsp; Alle Berechnungen laufen lokal im Browser — keine Daten verlassen dieses Gerät.</div>
+
+  <div id="fehler"></div>
+
+  <div class="cols">
+    <!-- ── Eingaben ─────────────────────────────────────────────── -->
+    <div class="card">
+      <h2>Eingaben</h2>
+      <fieldset><legend>Person &amp; Phasen</legend>
+        <label>Geburtsmonat <input type="month" id="gebMonat" value="1973-06" min="1945-01" max="2000-12"></label>
+        <div class="hint" id="alter-anzeige"></div>
+        <label>Brutto €/Jahr (Vollzeit) <input type="number" id="brutto" value="90000" step="1000"></label>
+        <label>Teilzeitanteil % <input type="number" id="tz" value="50" min="10" max="100" step="5"></label>
+        <label>Teilzeit ab Alter <input type="number" id="redAlter" value="62" min="50" max="70"></label>
+        <label>Rentenbeginn (Monat/Jahr) <input type="month" id="rentenbeginn" value=""></label>
+        <div class="hint" id="beginn-hint">Wie im Rentenportal angezeigt („Beginn November 2040"). Leer =
+        regulärer Beginn (Folgemonat der Regelaltersgrenze). Abschlag −0,3 %/Mon. bei früherem,
+        Zuschlag +0,5 %/Mon. bei späterem Beginn — auch der VBL-Abschlag wirkt pro Monat.</div>
+        <label>Betrachtung bis Alter <input type="number" id="endAlter" value="90" min="75" max="100"></label>
+      </fieldset>
+      <fieldset><legend>Renteninformation (GRV) &amp; VBL</legend>
+        <label>„Garantiert erreicht" (GRV) €/Mo. <input type="number" id="anwMo" value="850" step="10"></label>
+        <label>Stand der Renteninformation <input type="date" id="anwStand" value="2026-08-01" min="2025-07-01"></label>
+        <div class="hint">Begriffe wie im Rentenportal (rentenuebersicht.de): <strong>„Garantiert
+        erreicht"</strong> = bislang erreichte Anwartschaft aus den bisherigen Beiträgen (in der
+        Renteninformation: „Ihre bislang erreichte Rentenanwartschaft … nach heutigem Stand") —
+        <strong>diesen Betrag eintragen</strong>. <strong>„Garantiert erreichbar"</strong> = DRV-Hochrechnung
+        mit Weiterbeiträgen ohne Anpassung — NICHT eintragen, das rechnet das Tool selbst (Vollzeit-
+        Vergleich sollte diese Zahl auf ±2 % treffen). <strong>„Prognostiziert erreichbar"</strong> =
+        Hochrechnung mit 1–2 % Anpassung — vergleichbar mit der Kachel „GRV nominal". Liegt der Stand
+        der Renteninformation zurück, füllt das Tool die Monate bis heute mit dem aktuellen Brutto
+        (Vollzeit) auf und rechnet mit dem damals gültigen Rentenwert zurück.</div>
+        <label>„Garantiert erreicht" (VBL) €/Mo. <input type="number" id="vblMo" value="170" step="5"></label>
+        <div class="hint">Aus dem jährlichen VBL-Versicherungsnachweis. Status „pflichtversichert" folgt später.</div>
+      </fieldset>
+      <fieldset><legend>Depot &amp; Sparen</legend>
+        <label>Depotstand heute € <input type="number" id="depot0" value="70000" step="1000"></label>
+        <label>Sparrate Vollzeit €/Mo. <input type="number" id="sparV" value="2500" step="50"></label>
+        <label>Sparrate Teilzeit €/Mo. <input type="number" id="sparT" value="500" step="50"></label>
+      </fieldset>
+      <fieldset><legend>Annahmen</legend>
+        <label>Rendite nominal %/J. <input type="number" id="rendite" value="7" step="0.5"></label>
+        <label>Inflation %/J. <input type="number" id="infl" value="2" step="0.1"></label>
+        <label>Rentenanpassung %/J. <input type="number" id="radj" value="2" step="0.1"></label>
+        <label>Amtl. Modellpfad 2027–2030 nutzen <input type="checkbox" id="modellpfad" checked></label>
+        <label>Kinderlos (PV-Zuschlag) <input type="checkbox" id="kinderlos" checked></label>
+      </fieldset>
+      <fieldset><legend>Entnahme ab Renteneintritt</legend>
+        <label>Modus
+          <select id="modus">
+            <option value="swr">Fix (SWR, nominal konstant)</option>
+            <option value="infl">Inflationsangepasst</option>
+            <option value="ann">Annuität bis Zielalter</option>
+            <option value="hybrid">Hybrid: erst Fix, ab Umschaltalter Annuität</option>
+          </select></label>
+        <div class="hint" id="modus-hint"></div>
+        <label>Entnahmerate %/J. <input type="number" id="wr" value="4" step="0.1"></label>
+        <div class="hint">Gilt für „Fix" und „Inflationsangepasst". 4 % ist die klassische
+        Faustregel (Trinity-Studie); Einordnung und Grenzen im Recherchebericht (docs/).</div>
+        <label>Umschaltalter (Hybrid) <input type="number" id="switchAlter" value="75" min="65" max="90"></label>
+        <div class="hint">Nur für „Hybrid": bis dahin fixe Entnahme, danach wird der Restbestand
+        als Annuität bis zum Zielalter verrentet — kombiniert Flexibilität mit Planbarkeit.</div>
+        <label>Zielalter (Annuität/Hybrid) <input type="number" id="ziel" value="87" min="70" max="100"></label>
+        <div class="hint">Nur für „Annuität": Alter, zu dem das Depot planmäßig auf 0 läuft.
+        Danach bleiben nur GRV + VBL — Langlebigkeitsrisiko bewusst wählen.</div>
+        <label>Günstigerprüfung (Anlage KAP) <input type="checkbox" id="guenstig" checked></label>
+        <label>Kaufkraftziel €/Mo. (real) <input type="number" id="kkZiel" value="2500" step="100"></label>
+        <div class="hint">Wunsch-Nettoeinkommen in heutiger Kaufkraft — erscheint als Ziellinie im
+        Strategie-Vergleich unten.</div>
+        <div class="hint">Kein Risiko, nur Papierkram: Wer die Anlage KAP mit Antrag auf Günstiger-
+        prüfung abgibt, bekommt vom Finanzamt automatisch die günstigere Variante — schlechter als
+        die Abgeltungsteuer kann es nicht werden (§ 32d Abs. 6 EStG). Deshalb standardmäßig aktiv;
+        abschalten nur für den Vergleich „ohne Antrag".</div>
+      </fieldset>
+      <fieldset><legend>Altersvorsorgedepot (ab 2027)</legend>
+        <label>AVD nutzen <input type="checkbox" id="avdAktiv"></label>
+        <label>Eigenbeitrag €/Mo. <input type="number" id="avdBeitrag" value="150" min="0" max="150" step="10"></label>
+        <div class="hint">Staatlich gefördertes Depot ab 1.1.2027 (Riester-Nachfolger): 50 % Zulage
+        auf die ersten 360 €/Jahr, 25 % bis 1.800 € — max. 540 €/Jahr geschenkt, voller
+        Förderdeckel ab 150 €/Mo. Beitrag wird hier aus der Sparrate abgezweigt; Auszahlung ab
+        Rentenbeginn als Annuität, nachgelagert voll steuerpflichtig, KVdR-beitragsfrei (Annahme —
+        Auszahlungsdetails sind gesetzlich noch nicht final).</div>
+      </fieldset>
+      <fieldset><legend>Zukunfts-Szenarien</legend>
+        <label>GKV/PV-Beiträge
+          <select id="gkvSzenario">
+            <option value="konstant">konstant (heutige Sätze)</option>
+            <option value="basis">IGES-Basis: GKV 20,0 %, PV 4,5 % bis 2035</option>
+            <option value="unguenstig">IGES-ungünstig: GKV 22,6 %, PV 5,2 %</option>
+          </select></label>
+        <label>Rentenniveau-Risiko ab 2032 <input type="checkbox" id="rnRisiko"></label>
+        <div class="hint">Nach Ende der gesetzlichen Haltelinie (2031): Anpassung dauerhaft
+        0,5 %-Punkte unter der Annahme — bildet ein sinkendes Rentenniveau ab.</div>
+        <label>Abgeltungsteuer
+          <select id="abgSzenario">
+            <option value="25">26,375 % (heute)</option>
+            <option value="30">31,65 % (Szenario 30 % + Soli)</option>
+          </select></label>
+        <div class="hint">Politisch diskutiert, nicht beschlossen — als Was-wäre-wenn-Schalter,
+        keine Prognose (Details im Recherchebericht).</div>
+      </fieldset>
+      <fieldset><legend>Monte-Carlo-Simulation</legend>
+        <label>Rendite-Preset
+          <select id="mcPreset">
+            <option value="konservativ">konservativ: real 2,5 %, σ 15 %</option>
+            <option value="historisch" selected>historisch: real 5 %, σ 16 %</option>
+            <option value="eigene">eigene Werte</option>
+          </select></label>
+        <label>Realrendite μ %/J. <input type="number" id="mcMu" value="5" step="0.5"></label>
+        <label>Volatilität σ %/J. <input type="number" id="mcSigma" value="16" step="1"></label>
+        <label>Pfade <input type="number" id="mcN" value="2000" min="200" max="5000" step="100"></label>
+        <label>Seed <input type="number" id="mcSeed" value="42" step="1"></label>
+        <button onclick="mcStart()">Monte-Carlo starten</button>
+        <div class="hint">Statt einer festen Rendite: viele zufällige, aber reproduzierbare
+        (Seed) Marktverläufe — die Bandbreite zeigt das Sequenzrisiko, das eine Punktrechnung
+        versteckt. Presets aus dem Recherchebericht (real = nach Inflation; nominal ergibt sich
+        aus dem Inflations-Regler). Lognormal-Modell; historischer Block-Bootstrap folgt.</div>
+        <div class="msg" id="mc-status"></div>
+      </fieldset>
+      <div>
+        <button onclick="speichern()">Eingaben für das nächste Mal in diesem Browser speichern</button>
+        <button class="sec" onclick="loeschen()">Gespeicherte Eingaben löschen</button>
+        <button class="sec" onclick="exportieren()">Szenario als Datei exportieren (.json)</button>
+        <button class="sec" onclick="document.getElementById('import-file').click()">Szenario importieren</button>
+        <input type="file" id="import-file" accept=".json,application/json" style="display:none" onchange="importieren(this.files[0])">
+        <div class="hint">Lokal (localStorage), kein Cookie, keine Übertragung — Details unter „Hinweise".</div>
+        <div class="msg" id="store-msg"></div>
+      </div>
+    </div>
+
+    <!-- ── Ergebnisse ───────────────────────────────────────────── -->
+    <div>
+      <div class="card"><h2>Kennzahlen bei Renteneintritt</h2>
+        <div class="tiles" id="tiles"></div>
+        <div class="hint" id="abzug-zeile" style="margin-top:8px"></div>
+        <div class="msg" id="nachbau-zeile" style="margin-top:6px"></div>
+        <label style="max-width:420px;margin-top:4px">Portal „Garantiert erreichbar" €/Mo. (optional, zum Abgleich)
+          <input type="number" id="portalGE" value="" step="1"></label>
+      </div>
+      <div class="card"><h2>Depotverlauf</h2><canvas id="c-depot"></canvas></div>
+      <div class="card"><h2>Monatliches Einkommen im Ruhestand (reale Kaufkraft)</h2><canvas id="c-eink"></canvas></div>
+      <div class="card"><h2>Strategie-Vergleich: reale Kaufkraft der drei Entnahmemodi</h2>
+        <canvas id="c-kk"></canvas>
+        <div class="hint" id="kk-info"></div>
+      </div>
+      <div class="card" id="mc-card" style="display:none"><h2>Monte-Carlo: Bandbreite des Depotverlaufs</h2>
+        <canvas id="c-mc"></canvas>
+        <div class="tiles" id="mc-tiles" style="margin-top:10px"></div>
+        <div class="hint">Bänder: 10–90 % (hell) und 25–75 % (kräftig) der Pfade, Linie = Median.
+        Kein „Erfolg/Misserfolg": entscheidend ist, wann und wie stark angepasst werden müsste.</div>
+      </div>
+      <div class="card"><h2>Jahresübersicht</h2><div style="overflow-x:auto"><table id="tab"></table></div>
+        <div class="hint">Modellwerte · Parameterstand 2026 · reale Beträge in heutiger Kaufkraft.</div>
+      </div>
+      <div class="card"><h2>Selbsttest</h2>
+        <p class="hint" style="margin-top:0">Exakt die goldenen Testfälle der CI — jede Zahl mit Herkunft [GESETZ]/[AMTLICH]/[PROPERTY].</p>
+        <button class="sec" onclick="runSelftest()">Selbsttest ausführen</button>
+        <div id="st-out"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="info">
+    <h2>Hinweise (Details)</h2>
+    <p>1. Dieses Tool erstellt Modellrechnungen auf Basis vereinfachter Annahmen und
+    öffentlich zugänglicher Daten; es erbringt keine Anlage-, Steuer- oder Rechtsberatung
+    und empfiehlt keine konkreten Finanzprodukte.<br>
+    2. Alle Ergebnisse sind Näherungswerte ohne Gewähr.<br>
+    3. Historische oder simulierte Renditen sind keine Prognose künftiger Entwicklungen.<br>
+    4. Steuer-, Sozialversicherungs- und Rentenrecht ändern sich; maßgeblich ist der im
+    Footer ausgewiesene Parameterstand, dessen Aktualität selbst zu prüfen ist.<br>
+    5. Vor finanziellen Entscheidungen wird qualifizierte Beratung empfohlen.<br>
+    6. „Eingaben speichern" legt die Daten ausschließlich im localStorage dieses Browsers
+    ab (kein Cookie, keine Übertragung); „Löschen" entfernt sie vollständig.</p>
+    <p class="hint">Methodik, Quellen, ADRs: Ordner <code>docs/</code> im Repository. Lizenz: MIT.
+    Diagramme: Chart.js (MIT, eingebettet).</p>
+  </div>
+
+  <footer><span id="foot-stand"></span> · MIT-Lizenz · Quellcode &amp; Dokumentation im Repository</footer>
+</main>
+<!-- %%SCRIPTS%% -->
+<script>
+'use strict';
+var P = AVP.params[2026];
+var chartDepot = null, chartEink = null, chartKK = null, chartMC = null;
+var fmtEUR = function (v) { return Math.round(v).toLocaleString('de-DE') + ' €'; };
+var fmtMo  = function (v) { return Math.round(v).toLocaleString('de-DE') + ' €/Mo.'; };
+
+document.getElementById('foot-stand').textContent =
+  'v7.1.1 · Parameterstand ' + P.meta.jahr + ' · geprüft ' + P.meta.stand;
+
+var MODUS_HINTS = {
+  swr: 'Fix (SWR): Entnahme = Depotstand bei Eintritt × Rate, danach nominal konstant. Einfach und planbar — die reale Kaufkraft der Entnahme sinkt aber jedes Jahr mit der Inflation.',
+  infl: 'Inflationsangepasst: startet wie „Fix", steigt danach jährlich mit der Inflationsrate. Die reale Kaufkraft der Entnahme bleibt stabil, dafür wird das Depot stärker belastet.',
+  ann: 'Annuität: Entnahme so bemessen, dass das Depot exakt zum Zielalter aufgebraucht ist. Höchste Start-Entnahme — nach dem Zielalter kommt aus dem Depot nichts mehr.'
+};
+function monateSeit(gebMonat, stand) {
+  var g = gebMonat.split('-'), s = stand.split('-');
+  return (+s[0] - +g[0]) * 12 + (+s[1] - +g[1]);
+}
+function lesen() {
+  var g = function (id) { return +document.getElementById(id).value; };
+  var gebMonat = document.getElementById('gebMonat').value || '1973-06';
+  var startAlterMonate = Math.max(216, monateSeit(gebMonat, P.meta.stand));
+  return {
+    geburtsjahr: +gebMonat.slice(0, 4),
+    alterHeute: Math.floor(startAlterMonate / 12),
+    startAlterMonate: startAlterMonate,
+    retAlterMonate: (function () {
+      var rag = AVP.grv.regelaltersgrenzeMonate(+gebMonat.slice(0, 4));
+      var rb = document.getElementById('rentenbeginn').value;
+      if (!rb) {                                   // leer ⇒ regulärer Beginn
+        var gm = gebMonat.split('-');
+        var tot = (+gm[0]) * 12 + (+gm[1] - 1) + rag + 1;   // Folgemonat der Regelgrenze
+        rb = Math.floor(tot / 12) + '-' + String(tot % 12 + 1).padStart(2, '0');
+        document.getElementById('rentenbeginn').value = rb;
+      }
+      return monateSeit(gebMonat, rb);
+    })(),
+    bruttoJahr: g('brutto'),
+    teilzeitAnteil: g('tz') / 100, redAlter: g('redAlter'),
+    rentenbeginn: document.getElementById('rentenbeginn').value, gebMonat: gebMonat,
+    endAlter: g('endAlter'),
+    anwartschaftMo: g('anwMo'),
+    anwartschaftStand: document.getElementById('anwStand').value || P.meta.stand,
+    vblBestandMo: g('vblMo'),
+    depotStart: g('depot0'), sparVollMo: g('sparV'), sparTeilMo: g('sparT'),
+    renditeNominal: g('rendite') / 100, inflation: g('infl') / 100,
+    rentenanpassung: g('radj') / 100,
+    nutzeModellpfad: document.getElementById('modellpfad').checked,
+    modus: document.getElementById('modus').value,
+    entnahmerate: g('wr') / 100, zielAlter: g('ziel'),
+    guenstig: document.getElementById('guenstig').checked,
+    kinderlos: document.getElementById('kinderlos').checked,
+    switchAlter: g('switchAlter'), kaufkraftZiel: g('kkZiel'),
+    avdAktiv: document.getElementById('avdAktiv').checked,
+    avdBeitragMo: g('avdBeitrag'),
+    gkvSzenario: document.getElementById('gkvSzenario').value,
+    rentenniveauRisiko: document.getElementById('rnRisiko').checked,
+    abgeltungSzenario: document.getElementById('abgSzenario').value,
+    mcPreset: document.getElementById('mcPreset').value,
+    mcMuReal: g('mcMu') / 100, mcSigma: g('mcSigma') / 100,
+    mcN: g('mcN'), mcSeed: g('mcSeed'),
+    portalGarErreichbar: +document.getElementById('portalGE').value || null
+  };
+}
+var MC_PRESETS = { konservativ: [2.5, 15], historisch: [5, 16] };
+function presetAnwenden() {
+  var v = MC_PRESETS[document.getElementById('mcPreset').value];
+  if (v) { document.getElementById('mcMu').value = v[0]; document.getElementById('mcSigma').value = v[1]; }
+}
+
+function validieren(e) {
+  var w = [];
+  var retJahre = e.retAlterMonate / 12;
+  if (retJahre <= e.redAlter) { e.redAlter = Math.floor(retJahre) - 1; document.getElementById('redAlter').value = e.redAlter; w.push('Teilzeitbeginn auf Rentenbeginn−1 J. korrigiert.'); }
+  if (e.modus === 'ann' && e.zielAlter < retJahre + 5) { e.zielAlter = Math.ceil(retJahre) + 5; document.getElementById('ziel').value = e.zielAlter; w.push('Annuitäts-Zielalter auf Beginn+5 korrigiert.'); }
+  if (e.endAlter < e.zielAlter && e.modus === 'ann') { e.endAlter = e.zielAlter + 3; document.getElementById('endAlter').value = e.endAlter; }
+  var ragM = AVP.grv.regelaltersgrenzeMonate(e.geburtsjahr);
+  var absM = Math.max(0, ragM - e.retAlterMonate);
+  var zusM = Math.max(0, e.retAlterMonate - ragM - 1);
+  var gm = e.gebMonat.split('-');
+  var regTot = (+gm[0]) * 12 + (+gm[1] - 1) + ragM + 1;
+  var regStr = String(regTot % 12 + 1).padStart(2, '0') + '/' + Math.floor(regTot / 12);
+  document.getElementById('beginn-hint').textContent =
+    'Regulärer Beginn (Regelaltersgrenze): ' + regStr
+    + (absM > 0 ? ' — gewählter Beginn ' + absM + ' Mon. früher: GRV −' + (absM * 0.3).toFixed(1) + ' %, VBL −' + Math.min(10.8, absM * 0.3).toFixed(1) + ' %.'
+      : zusM > 0 ? ' — gewählter Beginn ' + zusM + ' Mon. später: GRV +' + (zusM * 0.5).toFixed(1) + ' %.'
+      : ' — Zugangsfaktor 1,0.');
+  return w;
+}
+
+function rechnen() {
+  var box = document.getElementById('fehler');
+  document.getElementById('modus-hint').textContent = MODUS_HINTS[document.getElementById('modus').value];
+  try {
+    var e = lesen();
+    document.getElementById('alter-anzeige').textContent =
+      'Alter heute: ' + Math.floor(e.startAlterMonate / 12) + ' J. ' + (e.startAlterMonate % 12)
+      + ' Mon. (Stand ' + P.meta.stand + ' — Rechenbasis des Parameterjahres)';
+    var warn = validieren(e);
+    var erg = AVP.app.berechne(e, P);
+    box.style.display = warn.length ? 'block' : 'none';
+    box.textContent = warn.join(' ');
+    rendern(e, erg);
+  } catch (ex) {
+    box.style.display = 'block';
+    box.textContent = 'Eingabefehler: ' + ex.message;
+  }
+}
+
+function rendern(e, erg) {
+  var k = erg.kennzahlen;
+  var eintritt = erg.jahre.find(function (j) { return j.imBezug; });
+  var tiles = [
+    [fmtMo(k.drvMoHeutigeWerte), 'GRV bei Eintritt (heutige Werte)'],
+    [fmtMo(eintritt.drvMoNominal), 'GRV bei Eintritt (nominal, ' + k.eintrittsjahr + ')'],
+    [fmtMo(eintritt.vblMoNominal), 'VBL bei Eintritt (nominal)'],
+    [k.epBeiEintritt.toFixed(2).replace('.', ',') + ' EP × ZF ' + k.zugangsfaktor.toFixed(3).replace('.', ','), 'Entgeltpunkte × Zugangsfaktor'],
+    [fmtEUR(k.depotBeiEintritt), 'Depot bei Eintritt (nominal)'],
+    [fmtMo(k.entnahmeStartMo), 'Entnahme zu Beginn (brutto)'],
+    [fmtMo(k.nettoMoNominalBeiEintritt), 'Netto gesamt (nominal)'],
+    [fmtMo(k.nettoMoRealBeiEintritt), 'Netto gesamt (heutige Kaufkraft)']
+  ];
+  if (k.avdRenteMo > 0) tiles.push([fmtMo(k.avdRenteMo), 'AVD-Rente (nominal, brutto)']);
+  document.getElementById('tiles').innerHTML = tiles.map(function (t) {
+    return '<div class="tile"><div class="v">' + t[0] + '</div><div class="l">' + t[1] + '</div></div>';
+  }).join('');
+  var a = eintritt.abz;
+  document.getElementById('abzug-zeile').textContent =
+    'Abzüge im 1. Bezugsjahr: ESt ' + fmtEUR(a.est) + ' + Soli ' + fmtEUR(a.soli)
+    + (a.guenstigGenutzt ? ' (Kapital via Günstigerprüfung im Tarif)' : ' + Kapitalsteuer ' + fmtEUR(a.kapSteuer))
+    + ' + KV ' + fmtEUR(a.kv) + ' + PV ' + fmtEUR(a.pv) + ' pro Jahr.';
+
+  var nz = document.getElementById('nachbau-zeile');
+  var portal = e.portalGarErreichbar;
+  if (portal) {
+    var delta = (k.hochrechnungsNachbauMo / portal - 1) * 100;
+    nz.className = 'msg ' + (Math.abs(delta) <= 2 ? 'ok' : 'warn');
+    nz.textContent = 'Validierung: Tool-Nachbau der DRV-Hochrechnung ' + fmtMo(k.hochrechnungsNachbauMo)
+      + ' vs. Portal „Garantiert erreichbar" ' + fmtMo(portal) + ' — Abweichung '
+      + (delta >= 0 ? '+' : '') + delta.toFixed(1).replace('.', ',') + ' % '
+      + (Math.abs(delta) <= 2 ? '(im ±2-%-Anker ✓)' : '(prüfen: Brutto vs. DRV-5-Jahres-Schnitt, Stand-Datum)');
+  } else {
+    nz.className = 'msg';
+    nz.textContent = 'Tool-Nachbau der DRV-Hochrechnung („Garantiert erreichbar"): '
+      + fmtMo(k.hochrechnungsNachbauMo) + ' — Portal-Wert daneben eintragen für den Abgleich.';
+  }
+
+  var kk = AVP.app.kaufkraftVergleich(e, P);
+  var kkBezug = kk.swr.filter(function (j) { return j.imBezug; });
+  if (chartKK) chartKK.destroy();
+  chartKK = new Chart(document.getElementById('c-kk'), {
+    type: 'line',
+    data: { labels: kkBezug.map(function (j) { return j.alter; }), datasets: [
+      { label: 'Fix (SWR)', data: kk.swr.filter(function (j) { return j.imBezug; }).map(function (j) { return Math.round(j.nettoMoReal); }), borderColor: '#2f6fb0', pointRadius: 0, borderWidth: 2, tension: .25 },
+      { label: 'Inflationsangepasst', data: kk.infl.filter(function (j) { return j.imBezug; }).map(function (j) { return Math.round(j.nettoMoReal); }), borderColor: '#1d7a5f', pointRadius: 0, borderWidth: 2, tension: .25 },
+      { label: 'Annuität', data: kk.ann.filter(function (j) { return j.imBezug; }).map(function (j) { return Math.round(j.nettoMoReal); }), borderColor: '#b3552d', pointRadius: 0, borderWidth: 2, tension: .25 },
+      { label: 'Kaufkraftziel', data: kkBezug.map(function () { return e.kaufkraftZiel; }), borderColor: '#6e6d66', borderDash: [4, 4], pointRadius: 0, borderWidth: 1.4 }
+    ] },
+    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      scales: { y: { ticks: { callback: function (v) { return v.toLocaleString('de-DE') + ' €'; } } }, x: { title: { display: true, text: 'Alter' } } } }
+  });
+  var unter = ['swr', 'infl', 'ann'].map(function (m2) {
+    var name = { swr: 'Fix', infl: 'Inflationsangepasst', ann: 'Annuität' }[m2];
+    var hit = kk[m2].find(function (j) { return j.imBezug && j.nettoMoReal < e.kaufkraftZiel; });
+    return name + ': ' + (hit ? 'Ziel unterschritten ab Alter ' + hit.alter : 'Ziel durchgehend erreicht');
+  });
+  document.getElementById('kk-info').textContent = unter.join(' · ') + ' — jeweils reale Kaufkraft inkl. GRV/VBL/AVD.';
+
+  var labels = erg.jahre.map(function (j) { return j.alter; });
+  if (chartDepot) chartDepot.destroy();
+  chartDepot = new Chart(document.getElementById('c-depot'), {
+    type: 'line',
+    data: { labels: labels, datasets: [
+      { label: 'Depot nominal', data: erg.jahre.map(function (j) { return Math.round(j.depotEnde); }),
+        borderColor: '#2f6fb0', pointRadius: 0, borderWidth: 2, tension: .25 },
+      { label: 'Depot real (heutige Kaufkraft)', data: erg.jahre.map(function (j) { return Math.round(j.depotEnde / j.inflFaktor); }),
+        borderColor: '#1d7a5f', borderDash: [6, 4], pointRadius: 0, borderWidth: 2, tension: .25 }
+    ] },
+    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      scales: { y: { ticks: { callback: function (v) { return Math.abs(v) >= 10000 ? Math.round(v / 1000).toLocaleString('de-DE') + ' k€' : Math.round(v).toLocaleString('de-DE') + ' €'; } } }, x: { title: { display: true, text: 'Alter' } } } }
+  });
+
+  var bezug = erg.jahre.filter(function (j) { return j.imBezug; });
+  if (chartEink) chartEink.destroy();
+  chartEink = new Chart(document.getElementById('c-eink'), {
+    type: 'line',
+    data: { labels: bezug.map(function (j) { return j.alter; }), datasets: [
+      { label: 'Netto gesamt real', data: bezug.map(function (j) { return Math.round(j.nettoMoReal); }),
+        borderColor: '#1a1a17', pointRadius: 0, borderWidth: 2.2, tension: .25 },
+      { label: 'GRV real', data: bezug.map(function (j) { return Math.round(j.drvMoReal); }),
+        borderColor: '#2f6fb0', pointRadius: 0, borderWidth: 1.6, tension: .25 },
+      { label: 'VBL real', data: bezug.map(function (j) { return Math.round(j.vblMoReal); }),
+        borderColor: '#b3552d', pointRadius: 0, borderWidth: 1.6, tension: .25 }
+    ] },
+    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      scales: { y: { ticks: { callback: function (v) { return v.toLocaleString('de-DE') + ' €'; } } }, x: { title: { display: true, text: 'Alter' } } } }
+  });
+
+  var zeilen = erg.jahre.filter(function (j, i) {
+    return i === 0 || j.alter === e.redAlter || j.alter === Math.floor(e.retAlterMonate / 12) || j.alter % 5 === 0 || i === erg.jahre.length - 1;
+  });
+  document.getElementById('tab').innerHTML =
+    '<tr><th>Jahr</th><th>Alter</th><th>Phase</th><th>Depot nominal</th><th>GRV nom.</th><th>VBL nom.</th><th>Netto real/Mo.</th></tr>' +
+    zeilen.map(function (j) {
+      return '<tr><td>' + j.jahr + '</td><td>' + j.alter + '</td><td>' + j.phase + '</td><td>'
+        + fmtEUR(j.depotEnde) + '</td><td>' + (j.imBezug ? fmtEUR(j.drvMoNominal) : '–') + '</td><td>'
+        + (j.imBezug ? fmtEUR(j.vblMoNominal) : '–') + '</td><td>'
+        + (j.imBezug ? fmtEUR(j.nettoMoReal) : '–') + '</td></tr>';
+    }).join('');
+}
+
+// ── Storage (ADR-0011) ──────────────────────────────────────────
+function storeMsg(txt, ok) { var m = document.getElementById('store-msg'); m.textContent = txt; m.className = 'msg ' + (ok ? 'ok' : 'warn'); }
+function speichern() {
+  var r = AVP.storage.save(lesen(), window.localStorage);
+  storeMsg(r.ok ? '✓ Gespeichert (' + r.bytes + ' Bytes, nur in diesem Browser).' :
+    (r.reason === 'quota' ? 'Speicher voll — nicht gespeichert.' : 'Speichern hier nicht möglich (z. B. privater Modus).'), r.ok);
+}
+function loeschen() {
+  var r = AVP.storage.clear(window.localStorage);
+  storeMsg(r.ok ? 'Gespeicherte Eingaben gelöscht.' : 'Löschen hier nicht möglich.', r.ok);
+}
+function wiederherstellen() {
+  var r = AVP.storage.load(window.localStorage);
+  if (!r.ok) { if (r.reason === 'schema') storeMsg('Alter Speicherstand (Schema ' + r.gefundenesSchema + ') passt nicht mehr — bitte neu speichern.', false); return; }
+  anwenden(r.eingaben);
+  storeMsg('✓ Gespeicherte Eingaben vom ' + new Date(r.gespeichertAm).toLocaleString('de-DE') + ' geladen.', true);
+}
+function anwenden(e) {
+  var set = function (id, v) { var el = document.getElementById(id); if (el && v !== undefined && v !== null) { if (el.type === 'checkbox') el.checked = !!v; else el.value = v; } };
+  if (e.gebMonat) document.getElementById('gebMonat').value = e.gebMonat;
+  if (e.rentenbeginn) document.getElementById('rentenbeginn').value = e.rentenbeginn;
+  set('brutto', e.bruttoJahr);
+  set('tz', Math.round(e.teilzeitAnteil * 100)); set('redAlter', e.redAlter);
+  set('endAlter', e.endAlter); set('anwMo', e.anwartschaftMo); set('anwStand', e.anwartschaftStand);
+  set('vblMo', e.vblBestandMo); set('depot0', e.depotStart); set('sparV', e.sparVollMo); set('sparT', e.sparTeilMo);
+  set('rendite', e.renditeNominal * 100); set('infl', e.inflation * 100); set('radj', e.rentenanpassung * 100);
+  set('modellpfad', e.nutzeModellpfad); set('kinderlos', e.kinderlos);
+  document.getElementById('modus').value = e.modus || 'swr';
+  set('wr', e.entnahmerate * 100); set('ziel', e.zielAlter); set('guenstig', e.guenstig);
+  set('switchAlter', e.switchAlter); set('kkZiel', e.kaufkraftZiel);
+  set('avdAktiv', e.avdAktiv); set('avdBeitrag', e.avdBeitragMo);
+  if (e.gkvSzenario) document.getElementById('gkvSzenario').value = e.gkvSzenario;
+  set('rnRisiko', e.rentenniveauRisiko);
+  if (e.abgeltungSzenario) document.getElementById('abgSzenario').value = e.abgeltungSzenario;
+  if (e.mcPreset) document.getElementById('mcPreset').value = e.mcPreset;
+  set('mcMu', (e.mcMuReal || 0.05) * 100); set('mcSigma', (e.mcSigma || 0.16) * 100);
+  set('mcN', e.mcN); set('mcSeed', e.mcSeed);
+  if (e.portalGarErreichbar) set('portalGE', e.portalGarErreichbar);
+}
+
+// ── Monte-Carlo (Worker aus eigenem Script-Block, seeded) ───────
+var mcWorker = null;
+function mcStart() {
+  var e = lesen();
+  var st = document.getElementById('mc-status');
+  var opt = { n: e.mcN, muReal: e.mcMuReal, sigma: e.mcSigma, seed: e.mcSeed };
+  st.className = 'msg'; st.textContent = 'Simulation läuft (' + opt.n + ' Pfade) …';
+  try {
+    if (mcWorker) mcWorker.terminate();
+    var src = document.querySelector('script').textContent
+      + ';self.onmessage=function(ev){var d=ev.data;'
+      + 'var res=AVP.mc.run(d.eingaben, AVP.params[2026], Object.assign({}, d.opt, '
+      + '{onProgress:function(f){postMessage({progress:f});}}));'
+      + 'postMessage({done:res});};';
+    mcWorker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+    mcWorker.onmessage = function (ev) {
+      if (ev.data.progress !== undefined) { st.textContent = 'Simulation: ' + Math.round(ev.data.progress * 100) + ' %'; }
+      if (ev.data.done) { st.className = 'msg ok'; st.textContent = '✓ ' + ev.data.done.n + ' Pfade (Seed ' + ev.data.done.seed + ', reproduzierbar).'; mcRendern(ev.data.done, e); }
+    };
+    mcWorker.onerror = function () { mcFallback(e, opt, st); };
+    mcWorker.postMessage({ eingaben: e, opt: opt });
+  } catch (ex) { mcFallback(e, opt, st); }
+}
+function mcFallback(e, opt, st) {
+  st.textContent = 'Worker nicht verfügbar — rechne direkt (500 Pfade) …';
+  setTimeout(function () {
+    var res = AVP.mc.run(e, P, Object.assign({}, opt, { n: Math.min(500, opt.n) }));
+    st.className = 'msg ok'; st.textContent = '✓ ' + res.n + ' Pfade (Main-Thread-Fallback).';
+    mcRendern(res, e);
+  }, 30);
+}
+function mcRendern(res, e) {
+  document.getElementById('mc-card').style.display = 'block';
+  var alter0 = Math.floor(e.startAlterMonate / 12);
+  var labels = Array.from({ length: res.jahreN }, function (_, i) { return alter0 + i; });
+  var rund = function (arr) { return arr.map(function (v) { return v === null ? null : Math.round(v); }); };
+  if (chartMC) chartMC.destroy();
+  chartMC = new Chart(document.getElementById('c-mc'), {
+    type: 'line',
+    data: { labels: labels, datasets: [
+      { label: '90 %', data: rund(res.depotPerzentile.p90), borderColor: 'rgba(47,111,176,.35)', pointRadius: 0, borderWidth: 1, fill: false },
+      { label: '10–90 %', data: rund(res.depotPerzentile.p10), borderColor: 'rgba(47,111,176,.35)', backgroundColor: 'rgba(47,111,176,.10)', pointRadius: 0, borderWidth: 1, fill: '-1' },
+      { label: '75 %', data: rund(res.depotPerzentile.p75), borderColor: 'rgba(47,111,176,.55)', pointRadius: 0, borderWidth: 1, fill: false },
+      { label: '25–75 %', data: rund(res.depotPerzentile.p25), borderColor: 'rgba(47,111,176,.55)', backgroundColor: 'rgba(47,111,176,.18)', pointRadius: 0, borderWidth: 1, fill: '-1' },
+      { label: 'Median', data: rund(res.depotPerzentile.p50), borderColor: '#1a1a17', pointRadius: 0, borderWidth: 2.2, tension: .2, fill: false }
+    ] },
+    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { labels: { filter: function (it) { return ['Median', '10–90 %', '25–75 %'].indexOf(it.text) >= 0; } } } },
+      scales: { y: { ticks: { callback: function (v) { return Math.abs(v) >= 10000 ? Math.round(v / 1000).toLocaleString('de-DE') + ' k€' : Math.round(v).toLocaleString('de-DE') + ' €'; } } }, x: { title: { display: true, text: 'Alter' } } } }
+  });
+  var iRet = res.nettoPerzentile.p50.findIndex(function (v) { return v !== null; });
+  var tiles = [
+    [Math.round(res.anteilErschoepft * 100) + ' %', 'Pfade mit Depot-Erschöpfung vor Alter ' + e.endAlter],
+    [res.erschoepfungsAlterP10 ? 'Alter ' + res.erschoepfungsAlterP10 : '—', 'In 10 % der Pfade Depot erschöpft vor …'],
+    [res.erschoepfungMedian ? 'Alter ' + res.erschoepfungMedian : 'hält durch', 'Median-Erschöpfung'],
+    [fmtMo(res.nettoPerzentile.p10[iRet]), 'Netto real bei Eintritt — schlechte Pfade (P10)'],
+    [fmtMo(res.nettoPerzentile.p50[iRet]), 'Netto real bei Eintritt — Median'],
+    [fmtMo(res.nettoPerzentile.p90[iRet]), 'Netto real bei Eintritt — gute Pfade (P90)']
+  ];
+  document.getElementById('mc-tiles').innerHTML = tiles.map(function (t2) {
+    return '<div class="tile"><div class="v">' + t2[0] + '</div><div class="l">' + t2[1] + '</div></div>';
+  }).join('');
+}
+
+// ── Export / Import (JSON-Datei, gleiches Schema wie Storage) ───
+function exportieren() {
+  var payload = { schema: AVP.storage.SCHEMA, exportiertAm: new Date().toISOString(), eingaben: lesen() };
+  var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'avp-szenario-' + new Date().toISOString().slice(0, 10) + '.json';
+  a.click(); URL.revokeObjectURL(a.href);
+  storeMsg('✓ Szenario exportiert (' + blob.size + ' Bytes) — Datei bleibt lokal.', true);
+}
+function importieren(file) {
+  if (!file) return;
+  var r = new FileReader();
+  r.onload = function () {
+    try {
+      var payload = JSON.parse(r.result);
+      if (!payload || payload.schema !== AVP.storage.SCHEMA) { storeMsg('Import: Schema ' + (payload && payload.schema) + ' passt nicht (erwartet ' + AVP.storage.SCHEMA + ').', false); return; }
+      anwenden(payload.eingaben); rechnen();
+      storeMsg('✓ Szenario importiert (' + file.name + ').', true);
+    } catch (ex) { storeMsg('Import fehlgeschlagen: keine gültige Szenario-Datei.', false); }
+  };
+  r.readAsText(file);
+}
+
+// ── Selbsttest ──────────────────────────────────────────────────
+function runSelftest() {
+  var out = document.getElementById('st-out');
+  out.style.display = 'block'; out.textContent = '';
+  var lines = [];
+  var res = AVP.selftest.run(function (r) { lines.push((r.ok ? '✓ ' : '✗ ') + r.name + (r.ok ? '' : '\n    → ' + r.detail)); });
+  var head = res.fail === 0
+    ? '<span class="okc">ALLE TESTS BESTANDEN — ' + res.pass + '/' + (res.pass + res.fail) + '</span>\n\n'
+    : '<span class="failc">FEHLSCHLÄGE: ' + res.fail + '</span>\n\n';
+  out.innerHTML = head + lines.map(function (l) { return l.replace(/&/g, '&amp;').replace(/</g, '&lt;'); }).join('\n');
+}
+
+// ── Start ───────────────────────────────────────────────────────
+document.getElementById('mcPreset').addEventListener('change', presetAnwenden);
+Array.prototype.forEach.call(document.querySelectorAll('input, select'), function (el) {
+  el.addEventListener('input', rechnen); el.addEventListener('change', rechnen);
+});
+(function () {
+  var heute = new Date().toISOString().slice(0, 10);
+  if (heute > P.meta.gueltig_bis) {
+    var box = document.getElementById('fehler');
+    box.style.display = 'block';
+    box.textContent = '⚠ Parameterstand ' + P.meta.jahr + ' — bitte auf ein Update prüfen.';
+  }
+  wiederherstellen();
+  rechnen();
+})();
+</script>
+</body>
+</html>
