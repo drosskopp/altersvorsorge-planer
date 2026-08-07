@@ -17,6 +17,7 @@ jobs:
         with: { node-version: '22' }
       - run: make test
       - run: make release
+      - run: cp dist/altersvorsorge-planer.html dist/index.html
       - uses: actions/upload-pages-artifact@v3
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         with: { path: dist }
