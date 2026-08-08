@@ -51,6 +51,8 @@ AVP.depot = {
         if (cfg.modus === 'ann') {
           entnahmeStartMo = this.annuitaetMo(depot, jahresRendite(m),
                                              cfg.zielAlterMonate - cfg.retAlterMonate);
+        } else if (cfg.modus === 'ziel') {
+          entnahmeStartMo = (cfg.entnahmePfadJahrMo || [])[Math.floor((m - cfg.startAlterMonate) / 12)] || 0;
         } else {
           entnahmeStartMo = depot * cfg.entnahmerate / 12;   // swr, infl, hybrid Phase 1
         }
@@ -69,7 +71,18 @@ AVP.depot = {
       }
       const spar = m < cfg.redAlterMonate ? cfg.sparVollMo
                  : m < cfg.retAlterMonate ? cfg.sparTeilMo : 0;
-      const nachZiel = (cfg.modus === 'ann' || cfg.modus === 'hybrid') && m >= cfg.zielAlterMonate;
+      if (cfg.modus === 'ziel' && m >= cfg.retAlterMonate)
+        entnahmeAktMo = (cfg.entnahmePfadJahrMo || [])[Math.floor((m - cfg.startAlterMonate) / 12)] || 0;
+      // Ziel-Modus: Entnahmegrenze auf die LEBENSJAHR-Blockgrenze anheben, in
+      // der zielAlterMonate liegt — sonst ist der letzte Jahres-Block bei
+      // krummem Startmonat nur teilweise entnahmefaehig und der Zielrente-
+      // Solver kann die Jahresluecke dort nie schliessen (Regression:
+      // Start 52 J. 10 Mon.). ann/hybrid unveraendert (Annuitaeten-Formel
+      // nutzt zielAlterMonate exakt).
+      const zielGrenzeMonate = cfg.modus === 'ziel'
+        ? cfg.startAlterMonate + Math.ceil((cfg.zielAlterMonate - cfg.startAlterMonate) / 12) * 12
+        : cfg.zielAlterMonate;
+      const nachZiel = (cfg.modus === 'ann' || cfg.modus === 'hybrid' || cfg.modus === 'ziel') && m >= zielGrenzeMonate;
       const entn = m >= cfg.retAlterMonate && !nachZiel ? entnahmeAktMo : 0;
       const rmM = monatsZins(m);
       const entnEff = Math.min(entn, depot * (1 + rmM) + spar);   // nie unter 0

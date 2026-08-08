@@ -12,7 +12,7 @@ Browser läuft. Keine Server, keine Cookies, keine externen Requests:
 
 ## Status
 
-`v7.1.1` — Schritt 1 der Roadmap ist umgesetzt: der **solidierte,
+`v7.2.1` — Schritt 1 der Roadmap ist umgesetzt: der **solidierte,
 quellbelegte Rechenkern** mit 42 goldenen Testfällen (Herkunft je Fall:
 `[GESETZ]`, `[AMTLICH]` oder `[PROPERTY]`). Engine, Quellenmodell-Verdrahtung,
 UI und Monte-Carlo folgen (Schritte 2–5, siehe `docs/berichte/architektur-v7.md`).

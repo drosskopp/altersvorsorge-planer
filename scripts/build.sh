@@ -6,7 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p dist
 OUT=dist/altersvorsorge-planer.html
-MODULES=(src/vendor/chart.umd.js src/params/2026.js src/domain/grv.js src/domain/tax.js src/domain/vbl.js src/domain/sozial.js src/domain/storage.js src/engine/pfade.js src/engine/rente.js src/engine/veranlagung.js src/engine/depot.js src/engine/avd.js src/engine/mc.js src/ui/app.js src/selftest/cases.js)
+MODULES=(src/vendor/chart.umd.js src/params/2026.js src/domain/grv.js src/domain/tax.js src/domain/vbl.js src/domain/sozial.js src/domain/storage.js src/engine/pfade.js src/engine/rente.js src/engine/veranlagung.js src/engine/depot.js src/engine/avd.js src/engine/mc.js src/engine/ziel.js src/ui/app.js src/selftest/cases.js)
 
 {
   # Alles vor dem Marker

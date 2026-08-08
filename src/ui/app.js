@@ -48,6 +48,7 @@ AVP.app = {
       renditeNominal: e.renditeNominal, renditePfad: e.renditePfad,
       inflation: e.inflation,
       modus: e.modus, entnahmerate: e.entnahmerate,
+      entnahmePfadJahrMo: e.entnahmePfadJahrMo,
       zielAlterMonate: e.zielAlter * 12,
       switchAlterMonate: (e.switchAlter || 0) * 12
     });
@@ -134,10 +135,18 @@ AVP.app = {
    *  identischen Annahmen — Rueckgabe je Strategie die Netto-real-Zeitreihe. */
   kaufkraftVergleich(e, p) {
     const laeufe = {};
+    laeufe.zielInfo = null;
+    laeufe.ziel = null;   // wird unten gesetzt, wenn Solver verfuegbar
     for (const modus of ['swr', 'infl', 'ann']) {
       const erg = this.berechne(Object.assign({}, e, { modus }), p);
       laeufe[modus] = erg.jahre.map(j => ({ alter: j.alter, imBezug: j.imBezug,
                                             nettoMoReal: j.nettoMoReal }));
+    }
+    if (AVP.ziel) {
+      const z = AVP.ziel.maxZielrente(e, p);
+      laeufe.ziel = z.erg.jahre.map(j => ({ alter: j.alter, imBezug: j.imBezug,
+                                            nettoMoReal: j.nettoMoReal }));
+      laeufe.zielInfo = { zielMoReal: z.zielMoReal };
     }
     return laeufe;
   }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Altersvorsorge-Planer v7.1.1</title>
+<title>Altersvorsorge-Planer v7.2.1</title>
 <!-- Kein CDN, keine Webfonts, keine externen Requests (ADR-0008).
      Chart.js ist gevendort (src/vendor, MIT — siehe chart.js-LICENSE.md). -->
 <style>
@@ -47,7 +47,7 @@
 </head>
 <body>
 <main>
-  <h1>Altersvorsorge-Planer <span style="font-weight:400">v7.1.1</span></h1>
+  <h1>Altersvorsorge-Planer <span style="font-weight:400">v7.2.1</span></h1>
   <div class="sub">Modellrechnung — keine Anlage-, Steuer- oder Rechtsberatung.
     <a href="#info" onclick="document.getElementById('info').style.display='block';return false;">Details</a>
     &nbsp;·&nbsp; Alle Berechnungen laufen lokal im Browser — keine Daten verlassen dieses Gerät.</div>
@@ -104,6 +104,7 @@
             <option value="infl">Inflationsangepasst</option>
             <option value="ann">Annuität bis Zielalter</option>
             <option value="hybrid">Hybrid: erst Fix, ab Umschaltalter Annuität</option>
+            <option value="ziel">Zielrente: konstantes reales Netto bis Zielalter</option>
           </select></label>
         <div class="hint" id="modus-hint"></div>
         <label>Entnahmerate %/J. <input type="number" id="wr" value="4" step="0.1"></label>
@@ -239,12 +240,14 @@ var fmtEUR = function (v) { return Math.round(v).toLocaleString('de-DE') + ' €
 var fmtMo  = function (v) { return Math.round(v).toLocaleString('de-DE') + ' €/Mo.'; };
 
 document.getElementById('foot-stand').textContent =
-  'v7.1.1 · Parameterstand ' + P.meta.jahr + ' · geprüft ' + P.meta.stand;
+  'v7.2.1 · Parameterstand ' + P.meta.jahr + ' · geprüft ' + P.meta.stand;
 
 var MODUS_HINTS = {
   swr: 'Fix (SWR): Entnahme = Depotstand bei Eintritt × Rate, danach nominal konstant. Einfach und planbar — die reale Kaufkraft der Entnahme sinkt aber jedes Jahr mit der Inflation.',
   infl: 'Inflationsangepasst: startet wie „Fix", steigt danach jährlich mit der Inflationsrate. Die reale Kaufkraft der Entnahme bleibt stabil, dafür wird das Depot stärker belastet.',
-  ann: 'Annuität: Entnahme so bemessen, dass das Depot exakt zum Zielalter aufgebraucht ist. Höchste Start-Entnahme — nach dem Zielalter kommt aus dem Depot nichts mehr.'
+  ann: 'Annuität: Entnahme so bemessen, dass das Depot exakt zum Zielalter aufgebraucht ist. Höchste Start-Entnahme — nach dem Zielalter kommt aus dem Depot nichts mehr.',
+  hybrid: 'Hybrid: bis zum Umschaltalter fixe Entnahme, danach wird der Restbestand als Annuität bis zum Zielalter verrentet — Flexibilität am Anfang, Planbarkeit am Ende.',
+  ziel: 'Zielrente: Das Tool ERRECHNET das höchste konstante reale Netto-Gesamteinkommen, das mit Renten + Depotverzehr bis zum Zielalter durchgehend haltbar ist (Depot dann aufgebraucht, danach nur noch Renten). Die Entnahme füllt jedes Jahr exakt die Lücke.'
 };
 function monateSeit(gebMonat, stand) {
   var g = gebMonat.split('-'), s = stand.split('-');
@@ -322,6 +325,7 @@ function validieren(e) {
   return w;
 }
 
+var letzteZielLoesung = null;
 function rechnen() {
   var box = document.getElementById('fehler');
   document.getElementById('modus-hint').textContent = MODUS_HINTS[document.getElementById('modus').value];
@@ -331,17 +335,24 @@ function rechnen() {
       'Alter heute: ' + Math.floor(e.startAlterMonate / 12) + ' J. ' + (e.startAlterMonate % 12)
       + ' Mon. (Stand ' + P.meta.stand + ' — Rechenbasis des Parameterjahres)';
     var warn = validieren(e);
-    var erg = AVP.app.berechne(e, P);
+    var erg, zielSol = null;
+    if (e.modus === 'ziel') {
+      zielSol = AVP.ziel.maxZielrente(e, P);
+      letzteZielLoesung = zielSol;
+      erg = zielSol.erg;
+    } else {
+      erg = AVP.app.berechne(e, P);
+    }
     box.style.display = warn.length ? 'block' : 'none';
     box.textContent = warn.join(' ');
-    rendern(e, erg);
+    rendern(e, erg, zielSol);
   } catch (ex) {
     box.style.display = 'block';
     box.textContent = 'Eingabefehler: ' + ex.message;
   }
 }
 
-function rendern(e, erg) {
+function rendern(e, erg, zielSol) {
   var k = erg.kennzahlen;
   var eintritt = erg.jahre.find(function (j) { return j.imBezug; });
   var tiles = [
@@ -355,6 +366,11 @@ function rendern(e, erg) {
     [fmtMo(k.nettoMoRealBeiEintritt), 'Netto gesamt (heutige Kaufkraft)']
   ];
   if (k.avdRenteMo > 0) tiles.push([fmtMo(k.avdRenteMo), 'AVD-Rente (nominal, brutto)']);
+  if (zielSol) {
+    tiles.push([fmtMo(zielSol.zielMoReal), 'Zielrente: haltbares Netto (heutige Kaufkraft) bis ' + e.zielAlter]);
+    tiles.push([fmtMo(zielSol.entnahmeMoErstesJahr), 'Entnahme dafür im 1. Rentenjahr (nominal)']);
+    tiles.push([fmtMo(zielSol.entnahmeMoLetztesJahr), 'Entnahme im letzten Jahr vor ' + e.zielAlter + ' (nominal)']);
+  }
   document.getElementById('tiles').innerHTML = tiles.map(function (t) {
     return '<div class="tile"><div class="v">' + t[0] + '</div><div class="l">' + t[1] + '</div></div>';
   }).join('');
@@ -388,6 +404,7 @@ function rendern(e, erg) {
       { label: 'Fix (SWR)', data: kk.swr.filter(function (j) { return j.imBezug; }).map(function (j) { return Math.round(j.nettoMoReal); }), borderColor: '#2f6fb0', pointRadius: 0, borderWidth: 2, tension: .25 },
       { label: 'Inflationsangepasst', data: kk.infl.filter(function (j) { return j.imBezug; }).map(function (j) { return Math.round(j.nettoMoReal); }), borderColor: '#1d7a5f', pointRadius: 0, borderWidth: 2, tension: .25 },
       { label: 'Annuität', data: kk.ann.filter(function (j) { return j.imBezug; }).map(function (j) { return Math.round(j.nettoMoReal); }), borderColor: '#b3552d', pointRadius: 0, borderWidth: 2, tension: .25 },
+      { label: 'Zielrente (max. konstant)', data: kk.ziel.filter(function (j) { return j.imBezug; }).map(function (j) { return Math.round(j.nettoMoReal); }), borderColor: '#7a4fa3', pointRadius: 0, borderWidth: 2, tension: .25 },
       { label: 'Kaufkraftziel', data: kkBezug.map(function () { return e.kaufkraftZiel; }), borderColor: '#6e6d66', borderDash: [4, 4], pointRadius: 0, borderWidth: 1.4 }
     ] },
     options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
@@ -398,7 +415,9 @@ function rendern(e, erg) {
     var hit = kk[m2].find(function (j) { return j.imBezug && j.nettoMoReal < e.kaufkraftZiel; });
     return name + ': ' + (hit ? 'Ziel unterschritten ab Alter ' + hit.alter : 'Ziel durchgehend erreicht');
   });
-  document.getElementById('kk-info').textContent = unter.join(' · ') + ' — jeweils reale Kaufkraft inkl. GRV/VBL/AVD.';
+  document.getElementById('kk-info').textContent = unter.join(' · ')
+    + ' — Zielrente (violett): max. konstant haltbares Netto '
+    + fmtMo(kk.zielInfo.zielMoReal) + ' bis Alter ' + e.zielAlter + '. Jeweils reale Kaufkraft inkl. GRV/VBL/AVD.';
 
   var labels = erg.jahre.map(function (j) { return j.alter; });
   if (chartDepot) chartDepot.destroy();
@@ -503,6 +522,7 @@ function mcStart() {
       if (ev.data.done) { st.className = 'msg ok'; st.textContent = '✓ ' + ev.data.done.n + ' Pfade (Seed ' + ev.data.done.seed + ', reproduzierbar).'; mcRendern(ev.data.done, e); }
     };
     mcWorker.onerror = function () { mcFallback(e, opt, st); };
+    if (e.modus === 'ziel' && letzteZielLoesung) e.entnahmePfadJahrMo = letzteZielLoesung.pfad;
     mcWorker.postMessage({ eingaben: e, opt: opt });
   } catch (ex) { mcFallback(e, opt, st); }
 }

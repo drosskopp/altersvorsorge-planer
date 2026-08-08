@@ -141,3 +141,26 @@ Jede Version nennt ihren **Parameterstand**.
 - DOM-Verdrahtungs-Guard doppelt: in der Testsuite (`make test`, eigene
   Statuszeile) und als harte `check-integrity`-Stufe im Build — jede per
   `getElementById`/`g()`/`set()` referenzierte ID muss im Markup existieren.
+
+## [7.2.0] — 2026-08-08
+### Hinzugefügt
+- **Zielrente** (neuer Entnahmemodus): Solver errechnet das höchste konstante
+  reale Netto-Gesamteinkommen bis zum Zielalter (Depot planmäßig verbraucht,
+  danach nur Renten). Fixpunkt-Iteration über die komplette App-Kette (keine
+  duplizierte Steuerlogik) + Bisektion über die Zielhöhe; Entnahmepfad als
+  Array — Monte-Carlo stresst denselben Plan unter Zufallsmärkten.
+  Drei neue Kacheln (haltbares Netto, Entnahme erstes/letztes Jahr), vierte
+  Kurve im Strategie-Vergleich. 8 neue Tests (gesamt 130).
+### Behoben
+- MODUS_HINTS: fehlender Hybrid-Eintrag (Hint zeigte „undefined").
+
+## [7.2.1] — 2026-08-08
+### Behoben
+- Zielrente war in rechnen() nicht verdrahtet (zwei stille Patch-Fehlschläge
+  bei 7.2.0) — rendern() referenzierte die undefinierte Variable zielSol,
+  dadurch „Eingabefehler: zielSol is not defined" in ALLEN Modi.
+### Hinzugefügt
+- UI-Smoke-Guard als dritte Prüfstufe: das UI-Script wird im Test wirklich
+  ausgeführt (DOM-Stub mit Markup-Defaults) und rechnen() für alle fünf
+  Entnahmemodi aufgerufen. Fängt die Fehlerklasse „crasht nur im Browser"
+  (retAlter v7.1.1, zielSol v7.2.1); Negativtest verifiziert.

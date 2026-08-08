@@ -471,6 +471,47 @@ AVP.selftest = {
           && r1.depotPerzentile.p50[i] <= r1.depotPerzentile.p90[i];
     })());
 
+    // ── v7.2: Zielrente (konstantes reales Netto bis Alter Y) ────────────
+    const simZiel = AVP.depot.simulation({
+      startDepot: 300000, sparVollMo: 0, sparTeilMo: 0,
+      redAlterMonate: 0, retAlterMonate: 67 * 12, endAlterMonate: 90 * 12,
+      startAlterMonate: 67 * 12, renditeNominal: 0.05, inflation: 0.02,
+      modus: 'ziel', entnahmerate: 0, zielAlterMonate: 87 * 12,
+      entnahmePfadJahrMo: Array.from({ length: 24 }, () => 1000) });
+    t.close('[PROPERTY] Ziel-Modus: vorgegebener Pfad wird exakt entnommen (1.000 €/Mo.)',
+      simZiel.reihe[6].entnahmeMo, 1000, 1e-9);
+    // Ziel-Fixture: konsistenter Horizont (zielAlter 87 < endAlter 90) —
+    // die Basis-Fixture endet bei 85 und liesse den Verbrauch unbeobachtet.
+    const eZiel = Object.assign({}, eingaben, { endAlter: 90 });
+    const zSol = AVP.ziel.loeseEntnahmePfad(eZiel, p, 2000);
+    t.ok('[PROPERTY] Zielrente-Fixpunkt: jedes Bezugsjahr vor Y trifft 2.000 € real (±1 €)',
+      zSol.konvergiert && zSol.erg.jahre.every(j => !j.imBezug || j.alter >= eZiel.zielAlter
+        || Math.abs(j.nettoMoReal - 2000) < 1));
+    const zFloor = AVP.ziel.loeseEntnahmePfad(eZiel, p, 500);
+    t.ok('[PROPERTY] Zielrente-Floor: Ziel unter Renten-Netto ⇒ Entnahme 0, Netto ≥ Ziel',
+      zFloor.machbar && zFloor.pfad.every(v => v === 0)
+      && zFloor.erg.jahre.every(j => !j.imBezug || j.nettoMoReal >= 500));
+    const zMax = AVP.ziel.maxZielrente(eZiel, p);
+    t.ok('[PROPERTY] maxZielrente: Depot bei Y planmaessig verbraucht (Jahr Y−1 < 2.000 €, Y−2 > 0)',
+      zMax.depotBeiY < 2000 && zMax.erg.jahre.find(j => j.alter === eZiel.zielAlter - 2).depotEnde > 0);
+    const zKurz = AVP.ziel.maxZielrente(Object.assign({}, eZiel, { zielAlter: 80 }), p);
+    t.ok('[PROPERTY] maxZielrente monoton: kuerzerer Horizont (80) ⇒ hoeheres Ziel als bis 87',
+      zKurz.zielMoReal > zMax.zielMoReal);
+    t.ok('[PROPERTY] maxZielrente konsistent: gefundenes Z ist selbst machbar',
+      AVP.ziel.loeseEntnahmePfad(eZiel, p, zMax.zielMoReal).machbar);
+    // Regression: krumme Start-/Eintrittsmonate (52 J. 10 Mon. / 67 J. 1 Mon.)
+    // — der letzte Lebensjahr-Block vor Y muss voll entnahmefaehig sein.
+    const eKrumm = Object.assign({}, eingaben, {
+      alterHeute: 52, startAlterMonate: 52 * 12 + 10, retAlterMonate: 67 * 12 + 1,
+      zielAlter: 87, endAlter: 90 });
+    const zKrumm = AVP.ziel.maxZielrente(eKrumm, p);
+    const retIdxK = Math.floor((eKrumm.retAlterMonate - eKrumm.startAlterMonate) / 12);
+    t.ok('[PROPERTY] Zielrente bei krummen Monaten: volle Bezugsjahre treffen Z real (±2 €)',
+      zKrumm.erg.jahre.every((j, i) => i <= retIdxK || !j.imBezug || j.alter >= eKrumm.zielAlter
+        || Math.abs(j.nettoMoReal - zKrumm.zielMoReal) < 7));
+    t.ok('[PROPERTY] Zielrente bei krummen Monaten: Depot vor Y verbraucht (< 2.000 €), Z > 0',
+      zKrumm.depotBeiY < 2000 && zKrumm.zielMoReal > 500);
+
     return t.summary();
   }
 };
