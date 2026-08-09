@@ -16,7 +16,16 @@
   .sub { color:var(--mut); font-size:12.5px; margin-bottom:16px; }
   .sub a { color:var(--acc); }
   .cols { display:grid; grid-template-columns:340px 1fr; gap:16px; align-items:start; }
-  @media (max-width:900px){ .cols { grid-template-columns:1fr; } }
+  .cols > div { min-width:0; }
+  .jump { display:none; }
+  @media (max-width:900px){
+    .cols { grid-template-columns:1fr; }
+    .jump { display:inline-block; margin-bottom:10px; }
+    input[type=number], input[type=date], select { font-size:16px; min-height:38px; }
+    input[type=checkbox] { width:20px; height:20px; }
+    label { min-height:34px; margin:6px 0; }
+    button { min-height:44px; padding:10px 14px; }
+  }
   .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin:0 0 14px; }
   .card h2 { font-size:14px; margin:0 0 10px; }
   fieldset { border:0; padding:0; margin:0 0 12px; }
@@ -34,7 +43,8 @@
   .tile { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
   .tile .v { font-size:16.5px; font-weight:600; }
   .tile .l { font-size:11.5px; color:var(--mut); }
-  canvas { max-height:260px; }
+  .chartbox { position:relative; height:260px; }
+  .tbl-scroll { overflow-x:auto; touch-action:pan-x; }
   table { border-collapse:collapse; width:100%; font-size:12.5px; }
   th, td { text-align:right; padding:4px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }
   th:first-child, td:first-child { text-align:left; }
@@ -56,8 +66,9 @@
 
   <div class="cols">
     <!-- ── Eingaben ─────────────────────────────────────────────── -->
-    <div class="card">
+    <div class="card" id="eingaben-card">
       <h2>Eingaben</h2>
+      <button type="button" class="sec jump" onclick="document.getElementById('ergebnisse').scrollIntoView({behavior:'smooth',block:'start'})">Zu den Ergebnissen ↓</button>
       <fieldset><legend>Person &amp; Phasen</legend>
         <label>Geburtsmonat <input type="month" id="gebMonat" value="1973-06" min="1945-01" max="2000-12"></label>
         <div class="hint" id="alter-anzeige"></div>
@@ -182,7 +193,8 @@
     </div>
 
     <!-- ── Ergebnisse ───────────────────────────────────────────── -->
-    <div>
+    <div id="ergebnisse">
+      <button type="button" class="sec jump" onclick="document.getElementById('eingaben-card').scrollIntoView({behavior:'smooth',block:'start'})">↑ Zurück zu den Eingaben</button>
       <div class="card"><h2>Kennzahlen bei Renteneintritt</h2>
         <div class="tiles" id="tiles"></div>
         <div class="hint" id="abzug-zeile" style="margin-top:8px"></div>
@@ -190,19 +202,19 @@
         <label style="max-width:420px;margin-top:4px">Portal „Garantiert erreichbar" €/Mo. (optional, zum Abgleich)
           <input type="number" id="portalGE" value="" step="1"></label>
       </div>
-      <div class="card"><h2>Depotverlauf</h2><canvas id="c-depot"></canvas></div>
-      <div class="card"><h2>Monatliches Einkommen im Ruhestand (reale Kaufkraft)</h2><canvas id="c-eink"></canvas></div>
+      <div class="card"><h2>Depotverlauf</h2><div class="chartbox"><canvas id="c-depot"></canvas></div></div>
+      <div class="card"><h2>Monatliches Einkommen im Ruhestand (reale Kaufkraft)</h2><div class="chartbox"><canvas id="c-eink"></canvas></div></div>
       <div class="card"><h2>Strategie-Vergleich: reale Kaufkraft der drei Entnahmemodi</h2>
-        <canvas id="c-kk"></canvas>
+        <div class="chartbox"><canvas id="c-kk"></canvas></div>
         <div class="hint" id="kk-info"></div>
       </div>
       <div class="card" id="mc-card" style="display:none"><h2>Monte-Carlo: Bandbreite des Depotverlaufs</h2>
-        <canvas id="c-mc"></canvas>
+        <div class="chartbox"><canvas id="c-mc"></canvas></div>
         <div class="tiles" id="mc-tiles" style="margin-top:10px"></div>
         <div class="hint">Bänder: 10–90 % (hell) und 25–75 % (kräftig) der Pfade, Linie = Median.
         Kein „Erfolg/Misserfolg": entscheidend ist, wann und wie stark angepasst werden müsste.</div>
       </div>
-      <div class="card"><h2>Jahresübersicht</h2><div style="overflow-x:auto"><table id="tab"></table></div>
+      <div class="card"><h2>Jahresübersicht</h2><div class="tbl-scroll"><table id="tab"></table></div>
         <div class="hint">Modellwerte · Parameterstand 2026 · reale Beträge in heutiger Kaufkraft.</div>
       </div>
       <div class="card"><h2>Selbsttest</h2>
