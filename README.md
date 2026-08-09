@@ -41,4 +41,4 @@ GitHub Pages (einmalig aktivieren: *Settings → Pages → Source: GitHub Action
 - `docs/berichte/` — Rentenmodul-Analyse und Architektur-Entscheidungsdokument
 - `CONTRIBUTING.md` — inkl. Checkliste „jährliches Parameterupdate"
 
-Lizenz: MIT.
+Lizenz: AGPLv3.

@@ -164,3 +164,9 @@ Jede Version nennt ihren **Parameterstand**.
   ausgeführt (DOM-Stub mit Markup-Defaults) und rechnen() für alle fünf
   Entnahmemodi aufgerufen. Fängt die Fehlerklasse „crasht nur im Browser"
   (retAlter v7.1.1, zielSol v7.2.1); Negativtest verifiziert.
+
+## [7.2.2] — 2026-08-09
+### Geändert
+- Lizenzwechsel von MIT auf AGPLv3 (`LICENSE`, README, UI-Footer/Hinweise,
+  Architektur-Dokumentation). Chart.js bleibt als gevendorte Abhängigkeit
+  unter ihrer eigenen MIT-Lizenz.

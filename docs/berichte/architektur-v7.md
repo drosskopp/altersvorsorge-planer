@@ -128,7 +128,7 @@ Bewusst **nicht** gebaut: kein Plugin-System, keine Klassenhierarchien, kein Fra
 
 ```
 README.md            # Was/für wen, Screenshot, Quickstart, Kurz-Disclaimer, Badges
-LICENSE              # MIT (steht fest)
+LICENSE              # AGPLv3 (steht fest)
 CHANGELOG.md         # Keep-a-Changelog; jede Version nennt ihren Parameterstand
 CONTRIBUTING.md      # inkl. Checkliste "jährliches Parameterupdate"
 .github/
